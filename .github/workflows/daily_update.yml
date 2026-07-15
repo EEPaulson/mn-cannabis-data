@@ -1,0 +1,40 @@
+name: Daily Data Update and Merge
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-data-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Data Update Script
+        run: python update_and_merge.py
+
+      - name: Commit and Push Updated Data
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # git add -A ensures that when a new .xlsx file is created on the 1st or 15th, it gets pushed.
+          git add -A
+          
+          git commit -m "Automated data pipeline run: Update JSON and merge Excel" || true
+          git push
