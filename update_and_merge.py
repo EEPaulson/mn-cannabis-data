@@ -42,7 +42,6 @@ def main():
         df_tracked = pd.read_csv(TRACKED_JSON_FILE)
     else:
         print("No historical data found. Initializing new tracker...")
-        # If this is the first run, create an empty dataframe with the same columns
         df_tracked = pd.DataFrame(columns=df_fresh_json.columns.tolist() + ['date_added'])
 
     today_str = datetime.today().strftime('%Y-%m-%d')
@@ -60,10 +59,9 @@ def main():
             new_records.append(row_dict)
             new_rows_count += 1
 
-    # If we found new records, append them to our tracked dataframe
+    # Append new records to our tracked dataframe
     if new_records:
         df_new = pd.DataFrame(new_records)
-        # Using pd.concat instead of append (which is deprecated in newer pandas versions)
         df_tracked = pd.concat([df_tracked, df_new], ignore_index=True)
         print(f"Added {new_rows_count} new records to the tracker.")
     else:
@@ -89,9 +87,9 @@ def main():
     df_tracked['match_name'] = df_tracked.get('name', '').apply(clean_text)
     df_tracked['match_address'] = df_tracked.get('address', '').apply(clean_text)
     
-    # Clean Excel text (Assuming headers are 'Name' and 'Address')
-    df_excel['match_name'] = df_excel.get('Name', '').apply(clean_text)
-    df_excel['match_address'] = df_excel.get('Address', '').apply(clean_text)
+    # Clean Excel text (Using actual headers from your MN_OCM file)
+    df_excel['match_name'] = df_excel.get('Legal Business Name', '').apply(clean_text)
+    df_excel['match_address'] = df_excel.get('Retail Site Address', '').apply(clean_text)
     
     # Create combined fuzzy keys
     df_tracked['fuzzy_key'] = df_tracked['match_name'] + " " + df_tracked['match_address']
@@ -106,12 +104,10 @@ def main():
         search_key = json_row['fuzzy_key']
         best_match = None
         
-        # Only attempt match if we have a valid key
         if pd.notna(search_key) and str(search_key).strip() != "":
             best_match = process.extractOne(search_key, excel_keys, scorer=fuzz.token_set_ratio)
         
         if best_match and best_match[1] >= MATCH_THRESHOLD:
-            # Match found
             excel_index = best_match[2]
             excel_row = df_excel.iloc[excel_index]
             
@@ -119,20 +115,33 @@ def main():
             merged_row['Match_Score'] = best_match[1]
             combined_rows.append(merged_row)
         else:
-            # No match found
             json_row_dict = json_row.to_dict()
             json_row_dict['Match_Score'] = 0
             combined_rows.append(json_row_dict)
             
     combined_df = pd.DataFrame(combined_rows)
     
-    # Clean up temporary columns
+    # Clean up temporary matching columns from output
     columns_to_drop = ['match_name', 'match_address', 'fuzzy_key']
     combined_df = combined_df.drop(columns=[col for col in columns_to_drop if col in combined_df.columns])
     
-    # Save the final output
     combined_df.to_csv(FINAL_OUTPUT_FILE, index=False)
     print(f"Success! Final data saved to {FINAL_OUTPUT_FILE}")
+
+    # ==========================================
+    # 4. TWICE MONTHLY EXCEL EXPORT
+    # ==========================================
+    today_date = datetime.today()
+    # Execute only on the 1st and 15th of the month
+    if today_date.day in [1, 15]:
+        excel_export_filename = f"tracked_json_export_{today_str}.xlsx"
+        print(f"Today is the {today_date.day}. Exporting tracked JSON data to {excel_export_filename}...")
+        
+        # Drop the temporary fuzzy matching columns so the Excel file looks clean
+        df_tracked_clean = df_tracked.drop(columns=[col for col in columns_to_drop if col in df_tracked.columns])
+        df_tracked_clean.to_excel(excel_export_filename, index=False)
+        
+        print(f"Successfully exported {excel_export_filename}")
 
 if __name__ == "__main__":
     main()
